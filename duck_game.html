@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duck vs Robots</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            border: 3px solid #fff;
+            background: linear-gradient(180deg, #87ceeb 0%, #e0f6ff 100%);
+            overflow: hidden;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 200;
+            display: none;
+        }
+        #gameOver h1 {
+            margin: 0;
+            font-size: 48px;
+        }
+        #gameOver p {
+            font-size: 24px;
+            margin: 20px 0;
+        }
+        #stopButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px 20px;
+            background: #FF4444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            z-index: 150;
+        }
+        #stopButton:hover {
+            background: #FF2222;
+        }
+        #pauseScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 200;
+            display: none;
+        }
+        #pauseScreen h1 {
+            margin: 0;
+            font-size: 48px;
+        }
+        #pauseScreen p {
+            font-size: 20px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <button id="stopButton" onclick="togglePause()">STOP</button>
+        <div id="ui">
+            <div>Lives: <span id="lives">3</span></div>
+            <div>Score: <span id="score">0</span></div>
+        </div>
+        <div id="pauseScreen">
+            <h1>PAUSED</h1>
+            <p style="font-size: 20px; cursor: pointer; padding: 15px; background: #4CAF50; border-radius: 5px;" onclick="togglePause()">RESUME</p>
+        </div>
+        <div id="gameOver">
+            <h1>GAME OVER!</h1>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <p style="font-size: 20px; cursor: pointer; margin-top: 30px; padding: 15px; background: #4CAF50; border-radius: 5px;" onclick="restartGame()">CLICK TO PLAY AGAIN</p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Game variables
+        let gameRunning = true;
+        let gamePaused = false;
+        let lives = 3;
+        let score = 0;
+        let gameTime = 0;
+
+        // Duck
+        const duck = {
+            x: 20,
+            y: canvas.height / 2,
+            width: 40,
+            height: 40,
+            speed: 5,
+            vx: 0,
+            vy: 0
+        };
+
+        // Arrays
+        let bullets = [];
+        let robots = [];
+        let hearts = [];
+
+        // Keyboard input
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                shoot();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mouse click to shoot
+        canvas.addEventListener('click', (e) => {
+            shoot();
+        });
+
+        function shoot() {
+            if (!gameRunning) return;
+            bullets.push({
+                x: duck.x + duck.width,
+                y: duck.y + duck.height / 2,
+                width: 10,
+                height: 5,
+                speed: 8,
+                vx: 8,
+                vy: 0
+            });
+        }
+
+        function spawnRobot() {
+            // Roboti dolaze samo s desne strane, krećući se prema lijevoj
+            const y = Math.random() * (canvas.height - 35);
+
+            robots.push({
+                x: canvas.width + 30,
+                y: y,
+                width: 35,
+                height: 35,
+                vx: -2,
+                vy: 0,
+                health: 1
+            });
+        }
+
+        function spawnHeart(x, y) {
+            hearts.push({
+                x: x,
+                y: y,
+                width: 20,
+                height: 20,
+                vy: 1,
+                lifetime: 300
+            });
+        }
+
+        function togglePause() {
+            if (!gameRunning) return;
+            gamePaused = !gamePaused;
+            document.getElementById('pauseScreen').style.display = gamePaused ? 'block' : 'none';
+        }
+
+        function update() {
+            if (!gameRunning || gamePaused) return;
+
+            gameTime++;
+
+            // Duck movement (vertical only)
+            duck.vx = 0;
+            duck.vy = 0;
+            if (keys['arrowup'] || keys['w']) duck.vy = -duck.speed;
+            if (keys['arrowdown'] || keys['s']) duck.vy = duck.speed;
+
+            duck.y += duck.vy;
+
+            // Boundary check
+            if (duck.y < 0) duck.y = 0;
+            if (duck.y + duck.height > canvas.height) duck.y = canvas.height - duck.height;
+
+            // Update bullets
+            bullets = bullets.filter(bullet => {
+                bullet.x += bullet.vx;
+                return bullet.x < canvas.width + bullet.width;
+            });
+
+            // Spawn robots - jedan po jedan
+            const spawnRate = 100 - Math.min(gameTime / 500, 50);
+            if (gameTime % spawnRate < 1) {
+                spawnRobot();
+            }
+
+            // Update robots
+            robots = robots.filter(robot => {
+                // Just move straight in their direction
+                robot.x += robot.vx;
+                robot.y += robot.vy;
+
+                // Collision with duck
+                if (isColliding(duck, robot)) {
+                    lives--;
+                    document.getElementById('lives').textContent = lives;
+
+                    if (lives <= 0) {
+                        gameRunning = false;
+                        document.getElementById('gameOver').style.display = 'block';
+                        document.getElementById('finalScore').textContent = score;
+                    }
+
+                    // Reset duck position
+                    duck.y = canvas.height / 2;
+
+                    // Remove robot
+                    return false;
+                }
+
+                return true;
+            });
+
+            // Remove offscreen robots
+            robots = robots.filter(robot => {
+                return !(robot.x < -50 || robot.x > canvas.width + 50);
+            });
+
+            // Update hearts
+            hearts = hearts.filter(heart => {
+                heart.y += heart.vy;
+                heart.lifetime--;
+
+                // Collision with duck
+                if (isColliding(duck, heart) && lives < 3) {
+                    lives++;
+                    document.getElementById('lives').textContent = lives;
+                    return false;
+                }
+
+                return heart.lifetime > 0 && heart.y < canvas.height;
+            });
+
+            // Bullet-robot collision
+            bullets.forEach((bullet, bulletIdx) => {
+                robots.forEach((robot, robotIdx) => {
+                    if (isColliding(bullet, robot)) {
+                        robot.health--;
+                        bullets.splice(bulletIdx, 1);
+
+                        if (robot.health <= 0) {
+                            robots.splice(robotIdx, 1);
+                            score += 10;
+                            document.getElementById('score').textContent = score;
+
+                            // 30% chance to spawn heart
+                            if (Math.random() < 0.3) {
+                                spawnHeart(robot.x, robot.y);
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function isColliding(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function draw() {
+            // Background
+            ctx.fillStyle = '#87ceeb';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw duck
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.ellipse(duck.x + duck.width / 2, duck.y + 15, 15, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Duck bill
+            ctx.fillStyle = '#FF6B00';
+            ctx.beginPath();
+            ctx.ellipse(duck.x + duck.width - 5, duck.y + 15, 8, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Duck eyes
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(duck.x + duck.width / 2 + 3, duck.y + 10, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw bullets
+            ctx.fillStyle = '#FFD700';
+            bullets.forEach(bullet => {
+                ctx.fillRect(bullet.x - bullet.width / 2, bullet.y, bullet.width, bullet.height);
+            });
+
+            // Draw robots
+            robots.forEach(robot => {
+                ctx.fillStyle = '#FF4444';
+                ctx.fillRect(robot.x, robot.y, robot.width, robot.height);
+
+                // Robot eyes
+                ctx.fillStyle = '#000';
+                ctx.fillRect(robot.x + 8, robot.y + 8, 6, 6);
+                ctx.fillRect(robot.x + 22, robot.y + 8, 6, 6);
+
+                // Health indicator
+                ctx.fillStyle = robot.health > 1 ? '#00FF00' : '#FF0000';
+                ctx.fillRect(robot.x, robot.y - 8, robot.width, 4);
+            });
+
+            // Draw hearts
+            hearts.forEach(heart => {
+                ctx.fillStyle = '#FF69B4';
+                // Simple heart shape
+                ctx.beginPath();
+                ctx.moveTo(heart.x + 10, heart.y + 15);
+                ctx.arc(heart.x + 5, heart.y + 7, 5, 0, Math.PI * 2);
+                ctx.arc(heart.x + 15, heart.y + 7, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function restartGame() {
+            // Reset game state
+            gameRunning = true;
+            gamePaused = false;
+            lives = 3;
+            score = 0;
+            gameTime = 0;
+
+            // Reset duck
+            duck.x = 20;
+            duck.y = canvas.height / 2;
+            duck.vx = 0;
+            duck.vy = 0;
+
+            // Clear arrays
+            bullets = [];
+            robots = [];
+            hearts = [];
+
+            // Update UI
+            document.getElementById('lives').textContent = lives;
+            document.getElementById('score').textContent = score;
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('pauseScreen').style.display = 'none';
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
